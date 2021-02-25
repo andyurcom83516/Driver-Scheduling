@@ -431,21 +431,7 @@ class algorithm:
         self.p2_neighbor.shift[self.day] = d[self.p2].shift[self.day].copy()
     
     def mutation(self):
-        for p in [self.p1 , self.p2]:
-        
-            #離群值處理            
-    #        if d[p].working_time[self.day] + d[p].breaking_time[self.day] >= 720:            #若司機總工作時間超過12小時，則抓取其離群值
-    #            candidate = np.nonzero(d[p].shift[self.day])[0]           #列出班次時間
-    #            candidate_normal = abs(candidate.copy() - np.mean(candidate))   #列出與班次時間相差最多的班次
-    #            out_shift = candidate[np.argmax(candidate_normal)]    #離群班次
-    #            
-    #            for route in d[p].route:
-    #                if route.bus_number == d[p].shift[self.day][out_shift]:    
-    #                    route.demand[self.day].append(out_shift)         #將離群班次移回需求中
-    #                    d[p].shift[self.day][out_shift] = 0              #將離群班次從司機班表中移除
-    #                    break
-    
-                            
+        for p in [self.p1 , self.p2]:                           
             if d[p].breaking_time[self.day] / (d[p].working_time[self.day] + d[p].breaking_time[self.day]) >= 0.4:  #若休息時間占總工時超過40%，則進行突變
            
                 if len(np.nonzero(d[p].shift[self.day])[0]) == 0:    #若當天無班次，則跳過
