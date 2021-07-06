@@ -17,12 +17,12 @@ import math
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
-
-        
+import time
+import matplotlib.dates as mdates
+from datetime import datetime
 #%%
 class algorithm:
     def __init__(self):
-        self.driver = []
         self.crossover_successful = False
         global D77_drive_time,D168E_drive_time,D168W_drive_time,D0North_drive_time,D0South_drive_time,D92_drive_time,DY1_drive_time,DY1_ex_drive_time
         D77_drive_time = [20,20,21,21,21,21,20,20,22,22,23,23,
@@ -178,56 +178,81 @@ class algorithm:
                          17,17,17]
     
             
-    def run(self , d , number):
+    def run(self , d , number): #跑演算法的指令，包含選擇染色體、交配、突變，d: 司機的List， number: 迴圈次數
+        print("Run Ga or sa")
+        i = 0
+        while i < number:   
+            self.crossover_successful = True
+            self.selection_p1()  #選擇第一條染色體
+            self.selection_p2()  #選擇第二條染色體
+            if self.find_p2 == False:   #若找不到P2，則直接跳出，執行下一個iteration
+                continue
+
+            
+            self.crossover()
+            if self.crossover_successful == True:    #若交配有成功，則進行突變
+                self.mutation()
+                self.his.append(self.fitness_his(d))  #紀錄每個iteration的目標值(所有司機適應值總和)
+                i += 1
+
+                
+            
+            else:   #若交配沒有成功，則執行下一個iteration
+                continue
+
+    def run_TB(self ,d , number):
+        print("Run TB")
         i = 0
         while i < number:   
             self.crossover_successful = False
+            candidate = []       #染色體候選List
+            candidate_num = []   #判斷是否重複選取p2之List
             self.selection_p1()
-            self.selection_p2()
-            self.crossover()
-            if self.crossover_successful == True:                
+            for j in range(self.chrom_num):          #選取數個p2染色體         
+                self.selection_p2()
+                
+                if self.find_p2 == False:   #若找不到P2，則直接跳出，執行下一個iteration
+                    break
+                
+                else:
+                    if self.p2 in candidate_num: #如果選到的p2有在重複選取p2之List裡面，則重新選擇p2
+                        continue
+                    
+                    else:               #若沒有在重複選取p2之List裡面，則將p2放進染色體候選list裡面
+                        a = tabu_candidate(self.p1,self.p2,self.day,self.c,self.m,self.n,self.p1_neighbor,self.p2_neighbor)
+                        candidate.append(a)
+                        candidate_num.append(self.p2)
+
+            if self.find_p2 == True:                
+                candidate.sort(key = lambda x:x.takeValue())   #候選人排序，由小到大
+    
+                
+                for item in candidate:
+                    self.p2 = item.p2
+                    if self.tabu_list.check(self.p1 , self.p2) == True:  #若p1 p2有在tabu list裡面，則跳過
+                        continue
+                    
+                    else: #若沒有，則確定p2染色體
+                        self.tabu_list.add(self.p1 , self.p2)  #將p1 p2 紀錄在tabu list裡
+                        self.tabu_list.update()  #更新tabu list
+                        if len(np.nonzero(d[self.p1].shift[self.day])[0]) == 1:  #單點交配方案，選擇交配點
+                            self.c = item.c
+                        else:                        #雙點交配方案，選擇2個交配點
+                            self.m = item.m
+                            self.n = item.n
+                        self.day = item.day
+                        break
+                    
+                else:       #若無任何p2符合，則重新迴圈
+                    continue
+                    
+                self.crossover()   #選好最佳P2後即可進行交配
                 self.mutation()
                 self.his.append(self.fitness_his(d))
                 i += 1
                 
-            else:
-                continue
     
-    def run_TB(self ,d , number):
-        i = 0
-        while i < number:   
-            self.crossover_successful = False
-            candidate = []       #染色體候選陣列
-            candidate_num = []   #判斷是否重複選取p2之陣列
-            self.selection_p1()
-            for j in range(self.chrom_num):          #選取數個p2染色體         
-                self.selection_p2()                
-                if self.p2 in candidate_num:
-                    continue
-                
-                else:               
-                    a = tabu_candidate(self.p1,self.p2,self.day,self.c,self.m,self.n,self.p1_neighbor,self.p2_neighbor)
-                    candidate.append(a)
-                    candidate_num.append(self.p2)
-                    
-            candidate.sort(key = lambda x:x.takeValue())   #候選人排序，由小到大
-            
-            for item in candidate:
-                self.p2 = item.p2
-                if self.tabu_list.check(self.p1 , self.p2) == True:
-                    continue
-                
-                else:
-                    self.tabu_list.add(self.p1 , self.p2)
-                    self.tabu_list.update()
-                    break
-                
-            self.crossover()   #選好最佳P2後即可進行交配
-            self.mutation()
-            self.his.append(self.fitness_his(d))
-            i += 1
-    
-    def drive_time(self , number , time):
+    def drive_time(self , number , time):  #number: 公車代碼1~8  time:班次時間(period)  return: 當時的駕駛時間
         if number == 1:
             return D77_drive_time[time]   
         elif number == 2:
@@ -245,8 +270,31 @@ class algorithm:
         elif number == 8:
             return DY1_ex_drive_time[time]
     
+    def idle_time(self,k1):    #input:某天的班表   output:回傳可交配的點(單點交配用)
+        lunch = range(77,91)
+        dinner = range(144,168)
+        eat_lunch = False
+        eat_dinner = False
+        l = k1.copy()
 
-    def find_break(self, k1,k2):    #input:某天的班表   output:回傳可交配的點
+        for shift in np.nonzero(l)[0]:
+            shift_end = shift + self.drive_time(l[shift] , shift) + 1
+            if shift_end >= len(l):
+                shift_end = len(l)
+            
+            l[shift : shift_end] = [1] * (shift_end - shift)
+            if (shift + self.drive_time(l[shift] , shift) + 1 in lunch) and (eat_lunch == False):
+                l[shift_end : shift_end + 10] = [1] * 10
+                eat_lunch = True
+                
+            if (shift + self.drive_time(l[shift] , shift) + 1 in dinner) and (eat_dinner == False):
+                l[shift_end : shift_end + 10] = [1] * 10
+                eat_dinner = True
+        s1 = set([i for i , e in enumerate(l) if e == 0])
+        
+        return s1
+
+    def find_break(self, k1,k2):    #input:某天的班表(list, size = 207)   output:回傳可交配的點(雙點交配用)
         lunch = range(77,91)
         dinner = range(144,168)
         eat_lunch = False
@@ -277,7 +325,7 @@ class algorithm:
         
         return k
 
-    def findtwo(self, a):   #找出交配點(雙點交配)
+    def findtwo(self, a):   #找出交配點(雙點交配用)
         ans_list = []
         ans = []
         for i in range(len(a) - 1):
@@ -318,25 +366,30 @@ class algorithm:
         return (ans_list[n1][0] , ans_list[n2][0])
     
     def selection_p1(self):
-        fitness = []          #fitness:真實fitness分數    score:標準化後分數   location:染色體位置
-        location = []
-        for i in range(len(d)):   
-            fitness.append(d[i].fitness)
-            location.append(i)
-        score = fitness.copy()
-        for i in range(len(d)):
-            score[i] = fitness[i] / sum(fitness)
-            
+
+                  #fitness:真實fitness分數    score:標準化後分數   location:染色體位置
+        self.day = 0
+        location = np.arange(len(d))
+        score = np.zeros(len(d))
+
+        fitness = list(map(lambda x : x.fitness_day(self.day), d))
+
+
+        total_fitness = sum(fitness)
+        score = list(map(lambda x : x / total_fitness , fitness))
+
+        
         self.p1 = np.random.choice(location , p = np.array(score).ravel())   #self.p1:第一個Parent染色體位置
         
-        self.day = list(d[self.p1].fitness_list).index(max(d[self.p1].fitness_list))   #選適應值最差的那個天數
+        #self.day = list(d[self.p1].fitness_list).index(max(d[self.p1].fitness_list))   #選適應值最差的那個天數
         
         self.candidate = [x for x in d if (set(d[self.p1].route[0:2]) or set(d[self.p1].route[1:]) or set([d[self.p1].route[0],d[self.p1].route[2]])) <= set(x.route) and self.day != x.dayoff[0]] 
             #candidate:第二個Parent候選人位置，先找服務相似路線的司機
-        
-        
+
         
     def selection_p2(self):
+        self.find_p2 = False
+        #如果self.p1只有1個班次數量-->單點交配    
         if len(np.nonzero(d[self.p1].shift[self.day])[0]) == 1:
             rd.shuffle(self.candidate)   #候選人洗牌
             for route in self.candidate:
@@ -373,7 +426,8 @@ class algorithm:
                        
                         
                         #若皆符合限制式，則交配
-                        if (k1 <= set(d[self.p2].route_number)) and (k2 <= set(d[self.p1].route_number)) is True: 
+                        if (k1 <= set(d[self.p2].route_number)) and (k2 <= set(d[self.p1].route_number)) is True:
+                            self.find_p2 = True
                             break
                         
                         
@@ -388,21 +442,18 @@ class algorithm:
 
                     
                     else:                    #若交配成功，則跳出迴圈
-                        break
+                        continue
+                    break
+            
                    
         #如果self.p1有2個以上個班次數量-->雙點交配             
         else:
             rd.shuffle(self.candidate)   #候選人洗牌
-            for k2 in self.candidate:            
-                self.p2 = k2.driver_number
+            for p2 in self.candidate:            
+                self.p2 = p2.driver_number
                 cross = self.find_break(d[self.p1].shift[self.day] , d[self.p2].shift[self.day])  #找出可交配點
                 (self.n , self.m) = self.findtwo(cross)   #選出兩交配點
-                
-                if self.n > self.m :
-                    temp = self.m
-                    self.m = self.n
-                    self.n = temp
-                
+
                 if self.n == self.m:
                     continue
                 
@@ -417,21 +468,51 @@ class algorithm:
                 
                 #若皆符合限制式，則交配
                 if (k1 <= set(d[self.p2].route_number)) and (k2 <= set(d[self.p1].route_number)) is True :    
-
+                    self.find_p2 = True
                     break
                  
                 else: #若有無法服務的路線，則重新迴圈
                     continue
-                
-        self.p1_neighbor = driver(1001)
-        self.p1_neighbor.get_route([D77,D168E,D168W,D92,DY1,DY1_ex,D0North,D0South])        
-        self.p1_neighbor.shift[self.day] = d[self.p1].shift[self.day].copy()
-        self.p2_neighbor = driver(1002)
-        self.p2_neighbor.get_route([D77,D168E,D168W,D92,DY1,DY1_ex,D0North,D0South])
-        self.p2_neighbor.shift[self.day] = d[self.p2].shift[self.day].copy()
+        
+        if self.find_p2 == True and (k1 <= set(d[self.p2].route_number)) == True and (k2 <= set(d[self.p1].route_number)) == True:
+            
+            self.p1_neighbor = driver(1001)
+            self.p1_neighbor.get_route([D77,D168E,D168W,D92,DY1,DY1_ex,D0North,D0South])        
+            self.p1_neighbor.shift[self.day] = d[self.p1].shift[self.day].copy()
+            self.p2_neighbor = driver(1002)
+            self.p2_neighbor.get_route([D77,D168E,D168W,D92,DY1,DY1_ex,D0North,D0South])
+            self.p2_neighbor.shift[self.day] = d[self.p2].shift[self.day].copy()
+            
+            
+        else:
+            self.find_p2 = False
+    def mutation_2(self):
+        B = [D77,D168E,D168W,D92,DY1,DY1_ex,D0North,D0South]
+        b = np.zeros((7,207))
+        for bus in B:
+            for day in range(7):        
+                for i in bus.demand[day]:
+                    b[day][i] += 1
+        
+        
+        if sum(sum(b)) == 0:
+            return
+        
+        for p in [self.p1 , self.p2]:
+        
+            #離群值處理            
+    #        if d[p].working_time[self.day] + d[p].breaking_time[self.day] >= 720:            #若司機總工作時間超過12小時，則抓取其離群值
+    #            candidate = np.nonzero(d[p].shift[self.day])[0]           #列出班次時間
+    #            candidate_normal = abs(candidate.copy() - np.mean(candidate))   #列出與班次時間相差最多的班次
+    #            out_shift = candidate[np.argmax(candidate_normal)]    #離群班次
+    #            
+    #            for route in d[p].route:
+    #                if route.bus_number == d[p].shift[self.day][out_shift]:    
+    #                    route.demand[self.day].append(out_shift)         #將離群班次移回需求中
+    #                    d[p].shift[self.day][out_shift] = 0              #將離群班次從司機班表中移除
+    #                    break
     
-    def mutation(self):
-        for p in [self.p1 , self.p2]:                           
+                            
             if d[p].breaking_time[self.day] / (d[p].working_time[self.day] + d[p].breaking_time[self.day]) >= 0.4:  #若休息時間占總工時超過40%，則進行突變
            
                 if len(np.nonzero(d[p].shift[self.day])[0]) == 0:    #若當天無班次，則跳過
@@ -486,6 +567,37 @@ class algorithm:
                             d[p].shift[self.day][point] = bus_route.bus_number  #排班次到班表中
                             bus_route.demand[self.day].remove(point)   #移除班次需求
                             break                           
+    def mutation(self):
+        total = 0
+        for route in [D77,D168E,D168W,D92,DY1,DY1_ex,D0North,D0South]:       #計算當天剩餘班次
+            total += route.left_demand[self.day] 
+        if total == 0:
+            return
+            
+            
+        for p in [self.p1, self.p2]:
+            if len(np.nonzero(d[p].shift[self.day])[0]) == 0:    #若當天無班次，則跳過
+                continue
+            
+            for route in d[p].route:                           #計算當天剩餘班次
+                if route.left_demand[self.day] == 0:
+                    continue
+                
+                for demand in route.demand[self.day]:
+                    time = demand + route.driving_time[demand]
+                    if time in range(77,91) or range(144,168):
+                        time += 8
+                    if set(range(demand , time + 2)) < self.idle_time(d[p].shift[self.day]):
+                        d[p].shift[self.day][demand] == route.bus_number
+                        route.demand[self.day].remove(demand)
+                        break
+                else:
+                    continue
+                break
+
+  
+            
+    #計算所有司機的適應值
     def fitness_his(self,d):
         total = 0
         for i in range(len(d)):
@@ -543,7 +655,7 @@ class GA_SA(algorithm):
             self.p2_neighbor.shift[self.day][self.c:] = d[self.p1].shift[self.day][self.c:].copy()
             
             #若交配後適應值較佳，則交配
-            if self.p1_neighbor.fitness_list[self.day] + self.p2_neighbor.fitness_list[self.day] <= d[self.p1].fitness_list[self.day] + d[self.p2].fitness_list[self.day]:
+            if self.p1_neighbor.fitness_day(self.day) + self.p2_neighbor.fitness_day(self.day) <= d[self.p1].fitness_day(self.day) + d[self.p2].fitness_day(self.day):
                 d[self.p1].shift[self.day] = self.p1_neighbor.shift[self.day].copy()
                 d[self.p2].shift[self.day] = self.p2_neighbor.shift[self.day].copy()  
                 self.crossover_successful = True
@@ -555,30 +667,30 @@ class GA_SA(algorithm):
             self.p2_neighbor.shift[self.day][self.n : self.m + 1] = d[self.p1].shift[self.day][self.n : self.m + 1].copy()
             
             #若交配後適應值較佳，則交配
-            if self.p1_neighbor.fitness_list[self.day] + self.p2_neighbor.fitness_list[self.day] <= d[self.p1].fitness_list[self.day] + d[self.p2].fitness_list[self.day]:
+            if self.p1_neighbor.fitness_day(self.day) + self.p2_neighbor.fitness_day(self.day) <= d[self.p1].fitness_day(self.day) + d[self.p2].fitness_day(self.day):
                 d[self.p1].shift[self.day] = self.p1_neighbor.shift[self.day].copy()
                 d[self.p2].shift[self.day] = self.p2_neighbor.shift[self.day].copy() 
                 self.crossover_successful = True
-#%%
+
 class GA_TB(GA):
     def __init__(self):
         super().__init__()
-        self.c = 0
-        self.m = 0
-        self.n = 0
+        self.c = 0  #單點交配點
+        self.m = 0  #雙點交配點1
+        self.n = 0  #雙點交配點2
         self.his = []
-        self.chrom_num = 10   #選取染色體數量
-        self.tabu_list = tabu_list()
+        self.chrom_num = 20   #選取染色體數量
+        self.tabu_list = tabu_list()  #建立tabu list
         
     
             
              
            
-#%%
+
 class tabu_list:
     def __init__(self):     #基本架構:(self.p1, self.p2, 次數)  , n < m
         self.list = []
-        self.tenure = 7
+        self.tenure = 15
         
     def add(self , n , m):
         if n > m:
@@ -620,19 +732,19 @@ class tabu_candidate(algorithm):
             self.c = c
             self.p1_neighbor.shift[self.day][self.c:] = d[self.p2].shift[self.day][self.c:].copy()
             self.p2_neighbor.shift[self.day][self.c:] = d[self.p1].shift[self.day][self.c:].copy()
-            self.Tvalue = self.p1_neighbor.fitness_list[self.day] + self.p2_neighbor.fitness_list[self.day]
+            self.Tvalue = self.p1_neighbor.fitness_day(self.day) + self.p2_neighbor.fitness_day(self.day)
         
         else:
             self.m = m
             self.n = n
             self.p1_neighbor.shift[self.day][self.n : self.m + 1] = d[self.p2].shift[self.day][self.n : self.m + 1].copy()
             self.p2_neighbor.shift[self.day][self.n : self.m + 1] = d[self.p1].shift[self.day][self.n : self.m + 1].copy()
-            self.Tvalue = self.p1_neighbor.fitness_list[self.day] + self.p2_neighbor.fitness_list[self.day]
+            self.Tvalue = self.p1_neighbor.fitness_day(self.day) + self.p2_neighbor.fitness_day(self.day)
             
     def takeValue(self):
         return self.Tvalue  
         
-#%%
+
     
 class bus_route:
     def __init__(self ,bus_number, demand , driving_time):
@@ -648,7 +760,7 @@ class bus_route:
         
         return l
        
-#%%
+
 class driver(algorithm): 
     
     def __init__(self, driver_number):
@@ -741,35 +853,37 @@ class driver(algorithm):
              
                     if (free_time in lunch) or (free_time in dinner):                 #午餐、晚餐再加50分鐘
                         free_time += 10
-                            
+                 
+    def fitness_day(self, day):
+        self.working_time[day] = 0
+        self.breaking_time[day] = 0
+        self.shift_number[day] = len(np.nonzero(self.shift[day])[0])
+        if (day in self.dayoff) or (self.shift_number[day] == 0):
+            return 0
+        
+        else:
+            for i in np.nonzero(self.shift[day])[0]:                     
+                self.working_time[day] += super().drive_time(self.shift[day][i] , i) * 5
+                 
+            if self.shift_number[day] == 1:            #休息時間
+                self.breaking_time[day] += 0
+
+            else:       
+                start_time = np.nonzero(self.shift[day])[0][0]
+                k = int(self.shift_number[day] - 1)
+                end_time = np.nonzero(self.shift[day])[0][k]
+                self.breaking_time[day] = (end_time - start_time) * 5 - self.working_time[day] + super().drive_time(self.shift[day][np.nonzero(self.shift[day])[0][k]] , np.nonzero(self.shift[day])[0][k]) * 5
+                 
+            self.working_diff_time[day] = abs(self.working_time[day] - 480)
+            
+        return self.working_diff_time[day] + self.breaking_time[day]
+        
+                             
     @property
     def fitness_list(self):
         l = np.zeros(7)
         for day in range(7):
-             self.working_time[day] = 0
-             self.breaking_time[day] = 0
-             self.shift_number[day] = len(np.nonzero(self.shift[day])[0])
-             
-             if day not in self.dayoff:    
-                 self.penalty[day] = abs(self.shift_number[day] - 4) ** 2 * 100
-                 for i in np.nonzero(self.shift[day])[0]:                     
-                     self.working_time[day] += super().drive_time(self.shift[day][i] , i) * 5
-                 
-                 if self.shift_number[day] == 1:            #休息時間
-                     self.breaking_time[day] += 200
-                     
-                 elif self.shift_number[day] == 0:
-                     pass
-                 
-                 else:       
-                     start_time = np.nonzero(self.shift[day])[0][0]
-                     k = int(self.shift_number[day] - 1)
-                     end_time = np.nonzero(self.shift[day])[0][k]
-                     self.breaking_time[day] = (end_time - start_time) * 5 - self.working_time[day] + super().drive_time(self.shift[day][np.nonzero(self.shift[day])[0][k]] , np.nonzero(self.shift[day])[0][k]) * 5
-                     
-                 self.working_diff_time[day] = abs(self.working_time[day] - 480)
-                
-                 l[day] = self.working_diff_time[day] + self.breaking_time[day] #+ self.penalty[self.day]
+            l[day] = self.fitness_day(day)
                
         return l 
     
@@ -782,8 +896,9 @@ class driver(algorithm):
 
 
 #%%
-for diff in range(3):
-
+for diff in range(2):
+    iteration = 100000
+            
     D77d = [] #1
     D168Ed = [] #2
     D168Wd = [] #3
@@ -793,32 +908,29 @@ for diff in range(3):
     DY1d = [] #7
     DY1_exd = [] #8
     
-    data_D = ["77D_shift.xlsx" ,"168eastD_shift.xlsx" ,"168westD_shift.xlsx" , "0NorthD_shift.xlsx" , "0SouthD_shift.xlsx" , "92D_shift.xlsx" , "Y1D_shift.xlsx" ]
-    data_W = ["77W_shift.xlsx" ,"168eastW_shift.xlsx" ,"168westW_shift.xlsx" , "0NorthW_shift.xlsx" , "0SouthW_shift.xlsx" , "92W_shift.xlsx" , "Y1W_shift.xlsx" ]
+    data_D = ["77D" ,"168ED" ,"168WD" , "0ND" , "0SD" , "92D" , "Y1D" ]
+    data_W = ["77W" ,"168EW" ,"168WW" , "0NW" , "0SW" , "92W" , "Y1W" ]
     route_d = [D77d , D168Ed , D168Wd ,D0Northd , D0Southd , D92d , DY1d ]
     for day in range(7):
         if (day != 5) and (day != 6):
             for j in range(7):
                 l = []
-                file = pd.read_excel(data_D[j])
-                for i in range(len(file['time'])):
-                    l.append(int(file['time'][i] / 5))
+                file = pd.read_excel("current shift.xlsx" , sheet_name=data_D[j])
+                l = list(file['new']).copy()
                 route_d[j].append(l)
             l = []
             DY1_exd.append(l)
         else:
             for j in range(7):
                 l = []
-                file = pd.read_excel(data_W[j])
-                for i in range(len(file['time'])):
-                    l.append(int(file['time'][i] / 5))
+                file = pd.read_excel("current shift.xlsx" , sheet_name=data_W[j])
+                l = list(file['new']).copy()
                 route_d[j].append(l)
             l = []
-            file = pd.read_excel("Y1_exW_shift.xlsx")
-            for i in range(len(file['time'])):
-                l.append(int(file['time'][i] / 5))
+            file = pd.read_excel("current shift.xlsx" , sheet_name= "Y1exW")
+            l = list(file['new']).copy()
             DY1_exd.append(l)
-           
+       
     #公車路線資料匯入        
     D77 = bus_route(1, D77d, D77_drive_time)
     D168E = bus_route(2, D168Ed , D168E_drive_time)
@@ -833,15 +945,20 @@ for diff in range(3):
     
     d = []
     
-    for i in range(140):
+    for i in range(70):
             
-        a = driver(i)
-    
+        a = driver(i) 
+        if i <= 58:
+            a.dayoff = [i % 5]
+            a.get_route(list(np.random.choice([D77,D168E,D168W,D92,D0North,D0South,DY1,DY1_ex] , 3,p = [0.16,0.17,0.17,0.08,0.08,0.13,0.13,0.08],replace = False)))
             
-        a.get_route(rd.sample([D77,D168E,D168W,D92,DY1,DY1_ex,D0North,D0South] , 3))
-        a.dayoff = [i % 7]     
+        else:
+            a.dayoff = [(i % 2) + 5]
+            a.get_route(list(np.random.choice([D77,D168E,D168W,D92,D0North,D0South,DY1] , 3,p = [0.16,0.16,0.16,0.1,0.1,0.15,0.17],replace = False)))
+            
         #a.schedule_early(start_time = np.random.choice(np.arange(207) , p = np.array(c[0] / sum(c[0]).ravel())))
-        if i < 25 :       
+        
+        if i < 15 :       
             a.schedule_early(start_time=0)
             
             
@@ -849,60 +966,200 @@ for diff in range(3):
             a.schedule_late()
         
         d.append(a)
+
+#sa = GA()
+#start = time.time()
+#
+#sa.run(d,10000) 
+#end = time.time()  
+#plt.plot(np.arange(len(sa.his)) , sa.his, label = 'GA_SA')
+#print("p0 " , sa.phase0 , "p1 " , sa.phase1 ,"p2 " , sa.phase2 ,"p3 " , sa.phase3 ,"all time: " , end - start)
+#print("p1: " ,sa.p1time ,"p2: " ,sa.p2time ,"crossover: " ,sa.crosstime ,"mutation: " ,sa.mutationtime , "all time: " , end - start)
+            
+               
+    if diff == 1:
+        tb = GA_TB()
+        start = time.time()
+        tb.run_TB(d,iteration)
+        end = time.time()
         
-    if diff == 0:
-        k = GA_TB()
-        k.run(d,50000)
+        tb_time = end - start
         
-    elif diff == 1:
-        q = GA_SA()
-        q.run(d,50000)
+    elif diff == 0:
+        sa = GA_SA()
+        start = time.time()
+        sa.run(d,iteration)
+        end = time.time()
+        
+        sa_time = end - start
         
     else:
-        l = GA()
-        l.run(d,50000)
+        ga = GA()
+        start = time.time()
+        ga.run(d,iteration)
+        end = time.time()
         
+        ga_time = end - start
+
+
 #%%
-#班次需求分布圖
-B = [D77,D168E,D168W,D92,DY1,DY1_ex,D0North,D0South]
-b = np.zeros((7,207))
-for bus in B:
-    for day in range(7):        
-        for i in bus.demand[day]:
-            b[day][i] += 1
+D77d = [] #1
+D168Ed = [] #2
+D168Wd = [] #3
+D0Northd = [] #4
+D0Southd = [] #5
+D92d = [] #6
+DY1d = [] #7
+DY1_exd = [] #8
 
-c = np.zeros((7,207))
+data_D = ["77D" ,"168ED" ,"168WD" , "0ND" , "0SD" , "92D" , "Y1D" ]
+data_W = ["77W" ,"168EW" ,"168WW" , "0NW" , "0SW" , "92W" , "Y1W" ]
+route_d = [D77d , D168Ed , D168Wd ,D0Northd , D0Southd , D92d , DY1d ]
+for day in range(7):
+    if (day != 5) and (day != 6):
+        for j in range(7):
+            l = []
+            file = pd.read_excel("current shift.xlsx" , sheet_name=data_D[j])
+            l = list(file['new']).copy()
+            route_d[j].append(l)
+        l = []
+        DY1_exd.append(l)
+    else:
+        for j in range(7):
+            l = []
+            file = pd.read_excel("current shift.xlsx" , sheet_name=data_W[j])
+            l = list(file['new']).copy()
+            route_d[j].append(l)
+        l = []
+        file = pd.read_excel("current shift.xlsx" , sheet_name= "Y1exW")
+        l = list(file['new']).copy()
+        DY1_exd.append(l)
+   
+#公車路線資料匯入        
+D77 = bus_route(1, D77d, D77_drive_time)
+D168E = bus_route(2, D168Ed , D168E_drive_time)
+D168W = bus_route(3, D168Wd , D168W_drive_time)
+D0North = bus_route(4,D0Northd , D0North_drive_time)
+D0South = bus_route(5,D0Southd , D0South_drive_time)
+D92 = bus_route(6,D92d , D92_drive_time)
+DY1 = bus_route(7,DY1d , DY1_drive_time)
+DY1_ex = bus_route(8 , DY1_exd , DY1_ex_drive_time)            
+#%%
+#initialize
 
-for day in range(7):    
-    for i in range(157):
-        c[day][i] = sum(b[day][i:i+30])
+d = []
+
+for i in range(70):
+        
+    a = driver(i) 
+    if i <= 58:
+        a.dayoff = [i % 5]
+        a.get_route(list(np.random.choice([D77,D168E,D168W,D92,D0North,D0South,DY1,DY1_ex] , 3,p = [0.16,0.17,0.17,0.08,0.08,0.13,0.13,0.08],replace = False)))
+        
+    else:
+        a.dayoff = [(i % 2) + 5]
+        a.get_route(list(np.random.choice([D77,D168E,D168W,D92,D0North,D0South,DY1] , 3,p = [0.16,0.16,0.16,0.1,0.1,0.15,0.17],replace = False)))
+        
+    #a.schedule_early(start_time = np.random.choice(np.arange(207) , p = np.array(c[0] / sum(c[0]).ravel())))
     
-plt.bar(np.arange(len(b[0])),b[0])
+    if i < 15 :       
+        a.schedule_early(start_time=0)
+        
+        
+    else:
+        a.schedule_late()
+    
+    d.append(a)
 
-print(sum(sum(b)))
+#%%
+sa = GA_SA()
+start = time.time()
 
+sa.run(d,100000) 
+end = time.time()  
+#plt.plot(np.arange(len(sa.his)) , sa.his, label = 'GA_SA')
+#print("p1: " ,sa.p1time ,"p2: " ,sa.p2time ,"crossover: " ,sa.crosstime ,"mutation: " ,sa.mutationtime , "all time: " , end - start)
+print("time: ", end-start)
+#print(sa.fitness_his(d))
+ #%%
+#班次需求分布圖--平日
+B = [D77,D168E,D168W,D92,DY1,DY1_ex,D0North,D0South]
+weekdaydemand = np.zeros((7,207))
+for bus in B:
+    for day in range(5):        
+        for i in bus.demand[day]:
+            weekdaydemand[day][i] += 1
+            
+
+plt.bar(np.arange(len(weekdaydemand[0])),weekdaydemand[0])
+plt.xlabel('Period')
+plt.ylabel('Demand Trip')
+plt.legend()
+#plt.savefig("weekday demand.jpg")
+
+print(sum(sum(weekdaydemand)))
+#%%班次需求分布圖--假日
+B = [D77,D168E,D168W,D92,DY1,DY1_ex,D0North,D0South]
+weekenddemand = np.zeros((7,207))
+for bus in B:
+    for day in range(2):        
+        for i in bus.demand[day+5]:
+            weekenddemand[day][i] += 1
+
+plt.bar(np.arange(len(weekenddemand[0])),weekenddemand[0])
+plt.xlabel('Period')
+plt.ylabel('Demand Trip')
+plt.legend()
+df = pd.DataFrame(weekenddemand[0])
+#df.to_excel("weekenddemand[0].xlsx")
+#plt.savefig("weekend demand.jpg")
+print(sum(sum(weekenddemand)))
 #%%
-k = GA()
-k.run(d,100)
-plt.plot(np.arange(len(k.his)) , k.his , label = 'GA')
+driver_list = np.zeros((490,7))
+i = 0
+for driver in d:
+    for day in range(7):
+        j = 0
+        for shift in range(207):
+            if driver.shift[day][shift] != 0:
+                driver_list[i][j] = shift
+                j += 1
+        
+        i += 1
+driver_list = pd.DataFrame(driver_list)
+#driver_list.to_excel("driver routenumber.xlsx")
 #%%
-q = GA_SA()
-q.run(d,100)
-plt.plot(np.arange(len(q.his)) , q.his, label = 'GA_SA')
+l = []
+for driver in d:
+    for day in range(7):
+        l.append(driver.fitness_list[day])
+l = pd.DataFrame(l)
+
+l.to_excel("driver fitness.xlsx")
 #%%
-l = GA_TB()
-l.run_TB(d,100)
-plt.plot(np.arange(len(l.his)) , l.his, label = 'GA_TB')
+ga = GA()
+ga.run(d,2000)
+plt.plot(np.arange(len(ga.his)) , ga.his, label = 'GA')
+#%%
+sa = GA_SA()
+sa.run(d,25000)
+plt.plot(np.arange(len(sa.his)) , sa.his, label = 'GA_SA')
+#%%
+tb = GA_TB()
+tb.run_TB(d,25000)
+plt.plot(np.arange(len(tb.his)) , tb.his, label = 'GA_TB')
 #%%   比較圖
 
-plt.plot(np.arange(len(k.his)) , k.his , label = 'GA_TB')
-plt.plot(np.arange(len(q.his)) , q.his, label = 'GA_SA')
-plt.plot(np.arange(len(l.his)) , l.his, label = 'GA')
+plt.plot(np.arange(len(tb.his)) , tb.his , label = 'GA_TS' , linewidth = 1)
+plt.plot(np.arange(len(sa.his)) , sa.his, label = 'GA_SA')
+#plt.plot(np.arange(len(ga.his)) , ga.his, label = 'GA')
 
 plt.xlabel('Iteration')
 plt.ylabel('Fitness')
 plt.legend()
-plt.savefig("3 different algorithm p = 140.jpg")
+#plt.savefig("p = 70,iter = 200000_2.jpg")
+print(tb.his[-1] , sa.his[-1] , ga.his[-1])
+print(tb_time , sa_time , ga_time)
 #%% 判斷是否有排班時段錯誤
 for t in d:
     for day in range(7):
@@ -917,14 +1174,85 @@ for t in d:
                 print(t.driver_number , t.shift[day][shift] , t.route_number)
                 
 #%%  公車輛需求分布圖
+ra = algorithm()
 bus_demand = np.zeros(207)
 for route in [D77,D168E,D168W,D92,DY1,DY1_ex,D0North,D0South]:
-    for shift in route.demand[0]:
-        bus_demand[shift : shift + drive_time(route.bus_number , shift) + 1] = [x + 1 for x in bus_demand[shift : shift + drive_time(route.bus_number , shift) + 1]]
+    for shift in route.demand[6]:
+        bus_demand[shift : shift + route.driving_time[shift] + 1] = [x + 1 for x in bus_demand[shift : shift + route.driving_time[shift] + 1]]
 
 c = np.zeros(207)
 
 for i in range(107):
     c[i] = sum(bus_demand[i:i + 100])
     
-plt.bar(np.arange(len(bus_demand)) ,bus_demand)  
+plt.plot(np.arange(len(bus_demand)) ,bus_demand)  
+plt.xlabel('Period')
+plt.ylabel('Driver')
+plt.legend()
+#plt.savefig("weekend driver.jpg")
+#%%
+
+cplex = pd.read_excel("shiftdemand.xlsx")
+cplex = np.array(cplex)
+cplex = np.transpose(cplex)
+cplex[cplex==1] = 6
+#%%
+cplex_list = []
+cplex_fitness = 0
+
+for i in range(12):
+    c = driver(i)
+    c.shift[0] = cplex[i].copy()
+    cplex_list.append(c)
+    cplex_fitness += c.fitness
+cplex_fitness
+#%%
+D92d = [] #6
+
+data_D = ["92D" ]
+
+route_d = [D92d ]
+
+l = []
+file = pd.read_excel("current shift.xlsx" , sheet_name="92D")
+l = list(file['new']).copy()
+D92d.append(l)
+
+for i in range(6):
+    a = list(np.zeros(207))
+    D92d.append(a)
+
+    
+D92 = bus_route(6,D92d , D92_drive_time)   
+
+d = []
+
+for i in range(12):
+        
+    a = driver(i) 
+    a.get_route([D92])
+    a.dayoff = [5]
+        
+    
+    
+    if i < 4 :       
+        a.schedule_early(start_time=0)
+        
+        
+    else:
+        a.schedule_late()
+    
+    d.append(a)
+#%%
+
+sa = GA_TB()
+start = time.time()
+sa.run_TB(d,5000)
+end = time.time()
+print(end-start)
+#plt.plot(np.arange(len(sa.his)) , sa.his, label = 'GA_SA')
+#%%
+total = 0
+for driver in d:
+    total += driver.fitness
+total
